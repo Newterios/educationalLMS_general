@@ -1,0 +1,207 @@
+syntax = "proto3";
+
+package assessment.v1;
+
+option go_package = "github.com/Newterios/lms-system-prob/proto/assessment/v1;assessmentv1";
+
+import "common/v1/common.proto";
+
+// AssessmentService — 12 RPCs from PLAN.md §3.3.
+//
+// Conventions:
+//   * timestamps are RFC3339 strings.
+//   * student_id on writes is taken from the JWT — never from the request body.
+//   * Two distinct Choice shapes enforce correct-field visibility at the type level:
+//       ChoiceInput (write path) carries `correct`; Choice (read path) does not.
+//     Leaking the answer key to students is structurally impossible in the proto layer.
+//   * ExportGrades is unary — returns the full CSV in one ExportGradesResponse.
+//     An optional server-streaming WatchSubmissions sits outside the 12 required
+//     RPCs (bonus, see PLAN.md §3.3).
+service AssessmentService {
+  rpc CreateQuiz(CreateQuizRequest) returns (CreateQuizResponse);
+  rpc GetQuiz(GetQuizRequest) returns (GetQuizResponse);
+  rpc UpdateQuiz(UpdateQuizRequest) returns (UpdateQuizResponse);
+  rpc DeleteQuiz(DeleteQuizRequest) returns (DeleteQuizResponse);
+  rpc ListQuizzes(ListQuizzesRequest) returns (ListQuizzesResponse);
+  rpc StartAttempt(StartAttemptRequest) returns (StartAttemptResponse);
+  rpc SubmitAttempt(SubmitAttemptRequest) returns (SubmitAttemptResponse);
+  rpc GetAttempt(GetAttemptRequest) returns (GetAttemptResponse);
+  rpc ListAttempts(ListAttemptsRequest) returns (ListAttemptsResponse);
+  rpc GradeSubmission(GradeSubmissionRequest) returns (GradeSubmissionResponse);
+  rpc GetGradebook(GetGradebookRequest) returns (GetGradebookResponse);
+  rpc ExportGrades(ExportGradesRequest) returns (ExportGradesResponse);
+}
+
+message Quiz {
+  string id = 1;
+  string course_id = 2;
+  string title = 3;
+  int32 time_limit_sec = 4;
+  bool shuffle = 5;
+  string created_at = 6;      // RFC3339
+  repeated Question questions = 7;
+}
+
+// Question is used in ALL read responses (GetQuiz, ListQuizzes, StartAttempt, ...).
+// No `correct` field — answer key cannot leak to students by construction.
+message Question {
+  string id = 1;
+  string body = 2;
+  repeated Choice choices = 3;
+  int32 points = 4;
+}
+
+// Choice is the read-path shape (inside Question). No `correct` field.
+message Choice {
+  string key = 1;             // "a", "b", "c", ...
+  string value = 2;
+}
+
+// ChoiceInput is the write-path shape (inside QuestionInput). Carries `correct`.
+message ChoiceInput {
+  string key = 1;
+  string value = 2;
+  bool correct = 3;
+}
+
+// QuestionInput is the write-path shape used only in CreateQuiz requests.
+// Uses ChoiceInput so teachers can specify the answer key.
+message QuestionInput {
+  string body = 1;
+  repeated ChoiceInput choices = 2;
+  int32 points = 3;
+}
+
+message Attempt {
+  string id = 1;
+  string quiz_id = 2;
+  string student_id = 3;
+  string started_at = 4;      // RFC3339
+  string submitted_at = 5;    // RFC3339, empty until SubmitAttempt
+  double auto_score = 6;
+  double manual_score = 7;
+  string status = 8;          // "in_progress" | "submitted" | "graded"
+  repeated Answer answers = 9;
+}
+
+message Answer {
+  string question_id = 1;
+  string choice_key = 2;
+}
+
+message GradebookEntry {
+  string student_id = 1;
+  string quiz_id = 2;
+  string quiz_title = 3;
+  double score = 4;
+  string status = 5;          // "in_progress" | "submitted" | "graded" | "missing"
+}
+
+// 1. CreateQuiz
+message CreateQuizRequest {
+  string course_id = 1;
+  string title = 2;
+  int32 time_limit_sec = 3;
+  bool shuffle = 4;
+  repeated QuestionInput questions = 5;
+}
+message CreateQuizResponse {
+  Quiz quiz = 1;
+}
+
+// 2. GetQuiz
+message GetQuizRequest {
+  string id = 1;
+}
+message GetQuizResponse {
+  Quiz quiz = 1;
+}
+
+// 3. UpdateQuiz — metadata only; questions are managed separately if/when added.
+message UpdateQuizRequest {
+  string id = 1;
+  string title = 2;
+  int32 time_limit_sec = 3;
+  bool shuffle = 4;
+}
+message UpdateQuizResponse {
+  Quiz quiz = 1;
+}
+
+// 4. DeleteQuiz
+message DeleteQuizRequest {
+  string id = 1;
+}
+message DeleteQuizResponse {}
+
+// 5. ListQuizzes
+message ListQuizzesRequest {
+  string course_id = 1;
+  common.v1.Pagination pagination = 2;
+}
+message ListQuizzesResponse {
+  repeated Quiz quizzes = 1;
+  common.v1.PageInfo page_info = 2;
+}
+
+// 6. StartAttempt — student_id from JWT.
+message StartAttemptRequest {
+  string quiz_id = 1;
+}
+message StartAttemptResponse {
+  Attempt attempt = 1;
+}
+
+// 7. SubmitAttempt — multi-step write, runs in a DB transaction.
+message SubmitAttemptRequest {
+  string attempt_id = 1;
+  repeated Answer answers = 2;
+}
+message SubmitAttemptResponse {
+  Attempt attempt = 1;
+}
+
+// 8. GetAttempt
+message GetAttemptRequest {
+  string id = 1;
+}
+message GetAttemptResponse {
+  Attempt attempt = 1;
+}
+
+// 9. ListAttempts — optional filters.
+message ListAttemptsRequest {
+  optional string quiz_id = 1;
+  optional string student_id = 2;
+  common.v1.Pagination pagination = 3;
+}
+message ListAttemptsResponse {
+  repeated Attempt attempts = 1;
+  common.v1.PageInfo page_info = 2;
+}
+
+// 10. GradeSubmission — teacher override; runs in a DB transaction + outbox.
+message GradeSubmissionRequest {
+  string attempt_id = 1;
+  double manual_score = 2;
+}
+message GradeSubmissionResponse {
+  Attempt attempt = 1;
+}
+
+// 11. GetGradebook
+message GetGradebookRequest {
+  string course_id = 1;
+}
+message GetGradebookResponse {
+  repeated GradebookEntry entries = 1;
+}
+
+// 12. ExportGrades — unary; full CSV in one response.
+message ExportGradesRequest {
+  string course_id = 1;
+}
+message ExportGradesResponse {
+  bytes csv = 1;
+  string filename = 2;
+}
