@@ -1,0 +1,27 @@
+# Exclude git and CI
+.git
+.github
+.gemini
+
+# Exclude local build artifacts
+bin/
+dist/
+
+# Exclude IDE/OS files
+.DS_Store
+*.log
+
+# Exclude docs and scripts (not needed in Docker build)
+docs/
+*.md
+scripts/
+
+# Exclude frontend (not built by these Dockerfiles)
+frontend/
+web/
+
+# Exclude test data
+testdata/
+*_test.go
+
+# Include everything else (go.work, go.mod, go.sum, *.go, migrations, proto, etc.)

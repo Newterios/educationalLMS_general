@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "github.com/Newterios/lms-system-prob/proto/auth/v1;authv1";
+
+// AuthService — 12 RPCs from PLAN.md §3.1.
+//
+// Conventions:
+//   * timestamps are RFC3339 strings (AP3-style), not google.protobuf.Timestamp.
+//   * authenticated RPCs derive user_id from the JWT in gRPC metadata;
+//     the request body never carries it.
+//   * empty responses use explicit empty messages instead of google.protobuf.Empty
+//     for a uniform surface and easier evolution.
+service AuthService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  rpc ConfirmPasswordReset(ConfirmPasswordResetRequest) returns (ConfirmPasswordResetResponse);
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+}
+
+// User mirrors the auth_v2.users row, minus password_hash.
+message User {
+  string id = 1;
+  string email = 2;
+  string full_name = 3;
+  string locale = 4;
+  string role = 5;            // "student" | "teacher" | "admin"
+  bool email_verified = 6;
+  string created_at = 7;      // RFC3339
+  string updated_at = 8;      // RFC3339
+}
+
+// Session mirrors auth_v2.sessions, minus refresh_hash.
+message Session {
+  string id = 1;
+  string user_agent = 2;
+  string ip = 3;
+  string created_at = 4;      // RFC3339
+  string expires_at = 5;      // RFC3339
+  bool current = 6;           // true if this is the session that issued the request
+}
+
+// 1. Register
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+  string full_name = 3;
+  string locale = 4;
+}
+message RegisterResponse {
+  string user_id = 1;
+  bool requires_email_verification = 2;
+}
+
+// 2. Login
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+message LoginResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  string access_expires_at = 3; // RFC3339
+}
+
+// 3. RefreshToken
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  string access_expires_at = 3; // RFC3339
+}
+
+// 4. Logout — revoke the session identified by the supplied refresh_token.
+message LogoutRequest {
+  string refresh_token = 1;
+}
+message LogoutResponse {}
+
+// 5. VerifyEmail
+message VerifyEmailRequest {
+  string code = 1;
+}
+message VerifyEmailResponse {}
+
+// 6. RequestPasswordReset
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+message RequestPasswordResetResponse {}
+
+// 7. ConfirmPasswordReset
+message ConfirmPasswordResetRequest {
+  string code = 1;
+  string new_password = 2;
+}
+message ConfirmPasswordResetResponse {}
+
+// 8. ChangePassword — authenticated, user_id taken from JWT metadata.
+message ChangePasswordRequest {
+  string old_password = 1;
+  string new_password = 2;
+}
+message ChangePasswordResponse {}
+
+// 9. GetMe
+message GetMeRequest {}
+message GetMeResponse {
+  User user = 1;
+}
+
+// 10. UpdateProfile
+message UpdateProfileRequest {
+  string full_name = 1;
+  string locale = 2;
+}
+message UpdateProfileResponse {
+  User user = 1;
+}
+
+// 11. ListSessions — caller's own sessions (no pagination, sessions are bounded).
+message ListSessionsRequest {}
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+// 12. RevokeSession
+message RevokeSessionRequest {
+  string session_id = 1;
+}
+message RevokeSessionResponse {}

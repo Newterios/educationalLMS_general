@@ -1,0 +1,38 @@
+---
+- name: Ensure the application directory exists on the manager
+  ansible.builtin.file:
+    path: /opt/edulms
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copy Docker Swarm stack file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../swarm/docker-stack.yml"
+    dest: /opt/edulms/docker-stack.yml
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+
+- name: Copy Prometheus config
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/prometheus.yml"
+    dest: /opt/edulms/prometheus.yml
+    mode: "0644"
+
+- name: Deploy / update the EduLMS swarm stack
+  ansible.builtin.command: docker stack deploy -c /opt/edulms/docker-stack.yml edulms
+  args:
+    chdir: /opt/edulms
+  register: stack_deploy
+  changed_when: "'Updating' in stack_deploy.stdout or 'Creating' in stack_deploy.stdout"
+
+- name: Show running services
+  ansible.builtin.command: docker stack services edulms
+  register: stack_services
+  changed_when: false
+
+- name: Display service summary
+  ansible.builtin.debug:
+    var: stack_services.stdout_lines

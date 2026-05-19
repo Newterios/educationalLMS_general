@@ -1,0 +1,49 @@
+---
+- name: Set system hostname from inventory_hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Upgrade package cache + install baseline packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - vim
+      - htop
+      - jq
+      - chrony
+      - ufw
+      - python3-pip
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure chrony (NTP) is running
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+
+- name: Open SSH / HTTP / app ports in UFW
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "22"
+    - "80"
+    - "8080"
+    - "8081"
+    - "8082"
+    - "9080"
+    - "9090"
+    - "3000"
+    - "3002"
+
+- name: Enable UFW (after rules are set)
+  ansible.builtin.ufw:
+    state: enabled
+    policy: deny
+    logging: low

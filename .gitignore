@@ -33,3 +33,17 @@ coverage.html
 tmp/
 *.tmp
 .tokens
+
+# --- orchestration scripts (never commit) ---
+/run.sh
+/seed_*.sh
+/merge_main.sh
+/push_team.sh
+/finalize_and_push.sh
+
+# --- internal planning docs (never commit) ---
+/GUIDE.md
+/PLAN.md
+/PROMPT_FOR_CLAUDE_CODE_PHASE2.md
+__pycache__/
+*.pyc

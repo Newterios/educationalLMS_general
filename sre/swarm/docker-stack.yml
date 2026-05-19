@@ -1,0 +1,212 @@
+# Docker Swarm stack for the EduLMS End Term SRE project.
+#
+# Deploy with:
+#   docker swarm init                                  # once
+#   docker stack deploy -c sre/swarm/docker-stack.yml edulms
+#
+# Inspect:
+#   docker stack services edulms
+#   docker service logs edulms_payment
+#   docker stack ps edulms
+#
+# This file mirrors docker-compose.dev.yml but adds Swarm-specific
+# `deploy:` blocks (replicas, restart policies, update strategy,
+# placement, resource constraints) that Compose ignores in plain mode.
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: edulms
+      POSTGRES_PASSWORD: edulms
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [edulms]
+    deploy:
+      replicas: 1
+      placement: { constraints: [node.role == manager] }
+      restart_policy: { condition: any, max_attempts: 5 }
+      resources:
+        limits:   { cpus: "1.0", memory: 1024M }
+        reservations: { cpus: "0.1", memory: 256M }
+
+  redis:
+    image: redis:7-alpine
+    networks: [edulms]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any }
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  nats:
+    image: nats:2-alpine
+    command: ["-m", "8222"]
+    networks: [edulms]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any }
+
+  payment:
+    image: edulms/payment:1.0.0
+    environment:
+      PORT: "8081"
+      FAILURE_RATE: "0.02"
+    ports:
+      - "8081:8081"
+    networks: [edulms]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:   { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 128M }
+
+  user-profile:
+    image: edulms/user-profile:1.0.0
+    environment: { PORT: "8082" }
+    ports:
+      - "8082:8082"
+    networks: [edulms]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    deploy:
+      replicas: 2
+      update_config: { parallelism: 1, delay: 10s, order: start-first }
+      restart_policy: { condition: on-failure, max_attempts: 5 }
+      resources:
+        limits:   { cpus: "0.3", memory: 192M }
+        reservations: { cpus: "0.05", memory: 64M }
+
+  auth:
+    image: edulms/auth:1.0.0
+    environment:
+      DB_URL: "postgres://edulms:edulms@postgres:5432/auth_v2?sslmode=disable"
+      JWT_ACCESS_SECRET: "change-me-access"
+      JWT_REFRESH_SECRET: "change-me-refresh"
+      GRPC_PORT: "50051"
+      NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/0"
+    ports: ["50051:50051"]
+    networks: [edulms]
+    deploy:
+      replicas: 2
+      restart_policy: { condition: on-failure }
+      resources: { limits: { cpus: "0.5", memory: 256M } }
+
+  course:
+    image: edulms/course:1.0.0
+    environment:
+      DATABASE_URL_COURSE: "postgres://edulms:edulms@postgres:5432/course_v2?sslmode=disable"
+      JWT_ACCESS_SECRET: "change-me-access"
+      COURSE_GRPC_PORT: "50052"
+      NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/1"
+    ports: ["50052:50052"]
+    networks: [edulms]
+    deploy:
+      replicas: 2
+      restart_policy: { condition: on-failure }
+      resources: { limits: { cpus: "0.75", memory: 384M } }
+
+  assessment:
+    image: edulms/assessment:1.0.0
+    environment:
+      DATABASE_URL_ASSESSMENT: "postgres://edulms:edulms@postgres:5432/assessment_v2?sslmode=disable"
+      JWT_ACCESS_SECRET: "change-me-access"
+      ASSESSMENT_GRPC_PORT: "50053"
+      NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/2"
+      COURSE_GRPC_TARGET: "course:50052"
+    ports: ["50053:50053"]
+    networks: [edulms]
+    deploy:
+      replicas: 2
+      restart_policy: { condition: on-failure }
+      resources: { limits: { cpus: "0.75", memory: 384M } }
+
+  notification:
+    image: edulms/notification:1.0.0
+    environment:
+      NATS_URL: "nats://nats:4222"
+      WORKER_POOL_SIZE: "3"
+      JOB_RETRY_ATTEMPTS: "3"
+      DLQ_KEY: "dlq:notification"
+    networks: [edulms]
+    deploy:
+      replicas: 2
+      restart_policy: { condition: on-failure }
+      resources: { limits: { cpus: "0.5", memory: 256M } }
+
+  gateway:
+    image: edulms/gateway:1.0.0
+    environment:
+      GATEWAY_HTTP_PORT: "9080"
+      GATEWAY_AUTH_TARGET: "auth:50051"
+      GATEWAY_COURSE_TARGET: "course:50052"
+      GATEWAY_ASSESSMENT_TARGET: "assessment:50053"
+    ports: ["9080:9080"]
+    networks: [edulms]
+    deploy:
+      replicas: 2
+      update_config: { parallelism: 1, delay: 10s, order: start-first }
+      restart_policy: { condition: on-failure }
+      resources: { limits: { cpus: "0.5", memory: 256M } }
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    configs:
+      - source: prom_cfg
+        target: /etc/prometheus/prometheus.yml
+    ports: ["9090:9090"]
+    networks: [edulms]
+    deploy:
+      replicas: 1
+      placement: { constraints: [node.role == manager] }
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+    ports: ["3002:3000"]
+    networks: [edulms]
+    deploy:
+      replicas: 1
+      placement: { constraints: [node.role == manager] }
+
+configs:
+  prom_cfg:
+    file: ../monitoring/prometheus.yml
+
+volumes:
+  pgdata:
+
+networks:
+  edulms:
+    driver: overlay
+    attachable: true

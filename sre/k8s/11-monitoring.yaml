@@ -1,0 +1,156 @@
+# Minimal Prometheus + Grafana stack for the lab.
+# In production use kube-prometheus-stack via Helm.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+    scrape_configs:
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+  rules.yml: |
+    groups:
+      - name: edulms-slo
+        rules:
+          - alert: HighErrorRate
+            expr: sum(rate(payment_requests_total{status=~"5.."}[5m]))
+                  / sum(rate(payment_requests_total[5m])) > 0.01
+            for: 5m
+            labels: { severity: critical, service: payment }
+            annotations:
+              summary: "Payment error rate exceeds 1% SLO"
+          - alert: HighLatencyP95
+            expr: histogram_quantile(0.95,
+                  sum by (le) (rate(payment_request_latency_seconds_bucket[5m]))) > 0.2
+            for: 5m
+            labels: { severity: warning, service: payment }
+            annotations:
+              summary: "Payment p95 latency above 200 ms SLO"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: prometheus }
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: prometheus }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: monitoring
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus, namespace: monitoring }
+spec:
+  selector: { app: prometheus }
+  ports:
+    - port: 9090
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus, namespace: monitoring }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata: { labels: { app: prometheus } }
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.52.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.retention.time=7d
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "1Gi" }
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+            items:
+              - key: prometheus.yml
+                path: prometheus.yml
+              - key: rules.yml
+                path: rules/rules.yml
+---
+apiVersion: v1
+kind: Service
+metadata: { name: grafana, namespace: monitoring }
+spec:
+  selector: { app: grafana }
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: grafana, namespace: monitoring }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: grafana } }
+  template:
+    metadata: { labels: { app: grafana } }
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.3
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }

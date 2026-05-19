@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/Newterios/lms-system-prob/proto/common/v1;commonv1";
+
+// Pagination is the per-request paging cursor. page is 1-based.
+message Pagination {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+// PageInfo is the per-response paging echo plus a total row count.
+message PageInfo {
+  int32 page = 1;
+  int32 page_size = 2;
+  int64 total = 3;
+}
+
+// ErrorDetail is the structured detail attached to gRPC status messages
+// when the domain wants to carry per-field validation errors back to the
+// caller. Maps to AP2 §8 error shape.
+message ErrorDetail {
+  string code = 1;
+  string message = 2;
+  map<string, string> fields = 3;
+}

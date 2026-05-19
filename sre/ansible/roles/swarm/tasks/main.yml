@@ -1,0 +1,44 @@
+---
+- name: Determine swarm state on this node
+  ansible.builtin.command: docker info --format '{{ "{{" }}.Swarm.LocalNodeState{{ "}}" }}'
+  register: swarm_state
+  changed_when: false
+  failed_when: false
+
+- name: Initialise swarm on the manager
+  ansible.builtin.command: >
+    docker swarm init
+    --advertise-addr {{ ansible_default_ipv4.address }}
+  when:
+    - "'managers' in group_names"
+    - swarm_state.stdout != 'active'
+  register: swarm_init
+
+- name: Fetch worker join token (manager only)
+  ansible.builtin.command: docker swarm join-token -q worker
+  register: worker_join_token
+  when: "'managers' in group_names"
+  changed_when: false
+
+- name: Cache token + manager IP as facts for the play
+  ansible.builtin.set_fact:
+    swarm_worker_token: "{{ worker_join_token.stdout }}"
+    swarm_manager_ip: "{{ ansible_default_ipv4.address }}"
+  when: "'managers' in group_names"
+
+- name: Share fact across the play (manager → workers)
+  ansible.builtin.add_host:
+    name: edulms_swarm_facts
+    swarm_worker_token: "{{ hostvars[groups['managers'][0]].swarm_worker_token | default('') }}"
+    swarm_manager_ip:   "{{ hostvars[groups['managers'][0]].swarm_manager_ip | default('') }}"
+  when: groups['managers'] | length > 0
+
+- name: Join workers into the swarm
+  ansible.builtin.command: >
+    docker swarm join
+    --token {{ hostvars['edulms_swarm_facts'].swarm_worker_token }}
+    {{ hostvars['edulms_swarm_facts'].swarm_manager_ip }}:2377
+  when:
+    - "'workers' in group_names"
+    - swarm_state.stdout != 'active'
+    - hostvars['edulms_swarm_facts'].swarm_worker_token | length > 0

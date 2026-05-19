@@ -1,0 +1,89 @@
+# Prometheus alert rules derived from the project SLOs (see sre/docs/SLI_SLO.md).
+#
+# SLOs:
+#   - Availability  >= 99 %
+#   - Latency (p95) <= 200 ms
+#   - Error rate    <= 1 %
+
+groups:
+  - name: edulms-availability
+    rules:
+      - alert: PaymentServiceDown
+        expr: up{job="payment"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: payment
+        annotations:
+          summary: "Payment service is down"
+          description: "No successful scrapes for {{ $labels.instance }} in 1m."
+          runbook_url: "https://github.com/<your-org>/final_apt_eduLms/blob/main/sre/docs/POSTMORTEM.md"
+
+      - alert: UserProfileDown
+        expr: up{job="user-profile"} == 0
+        for: 1m
+        labels: { severity: critical, service: user-profile }
+        annotations:
+          summary: "User-profile service is down"
+
+  - name: edulms-error-rate
+    rules:
+      - alert: PaymentErrorRateAboveSLO
+        expr: |
+          sum(rate(payment_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(payment_requests_total[5m])), 0.001) > 0.01
+        for: 5m
+        labels: { severity: critical, service: payment, slo: error_rate }
+        annotations:
+          summary: "Payment error rate > 1% SLO"
+          description: "Burning the error budget. Investigate {{ $labels.instance }}."
+
+      - alert: UserProfileErrorRateAboveSLO
+        expr: |
+          sum(rate(user_profile_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(user_profile_requests_total[5m])), 0.001) > 0.01
+        for: 5m
+        labels: { severity: warning, service: user-profile, slo: error_rate }
+        annotations:
+          summary: "User-profile error rate > 1% SLO"
+
+  - name: edulms-latency
+    rules:
+      - alert: PaymentLatencyP95AboveSLO
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(payment_request_latency_seconds_bucket[5m]))
+          ) > 0.2
+        for: 5m
+        labels: { severity: warning, service: payment, slo: latency }
+        annotations:
+          summary: "Payment p95 latency > 200 ms SLO"
+          description: "95th percentile latency for /pay is above SLO for 5m."
+
+      - alert: UserProfileLatencyP95AboveSLO
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(user_profile_request_latency_seconds_bucket[5m]))
+          ) > 0.2
+        for: 5m
+        labels: { severity: warning, service: user-profile, slo: latency }
+        annotations:
+          summary: "User-profile p95 latency > 200 ms SLO"
+
+  - name: edulms-saturation
+    rules:
+      - alert: PaymentHighCPU
+        expr: rate(process_cpu_seconds_total{job="payment"}[5m]) * 100 > 75
+        for: 10m
+        labels: { severity: warning, service: payment }
+        annotations:
+          summary: "Payment CPU >75% for 10m — consider scaling out"
+
+      - alert: PaymentInflightSpike
+        expr: payment_inflight_requests > 50
+        for: 2m
+        labels: { severity: warning, service: payment }
+        annotations:
+          summary: "Payment in-flight requests > 50"

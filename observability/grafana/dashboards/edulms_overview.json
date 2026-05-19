@@ -1,0 +1,156 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "expr": "rate(edulms_grpc_server_handled_total[1m])",
+          "legendFormat": "{{grpc_service}}/{{grpc_method}} {{grpc_code}}",
+          "refId": "A"
+        }
+      ],
+      "title": "gRPC RPS by method",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2 } } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(edulms_grpc_server_handling_seconds_bucket[1m]))",
+          "legendFormat": "p99 {{grpc_method}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(edulms_grpc_server_handling_seconds_bucket[1m]))",
+          "legendFormat": "p50 {{grpc_method}}",
+          "refId": "B"
+        }
+      ],
+      "title": "gRPC Latency (p50/p99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.1 }] } } },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "text": {} },
+      "targets": [
+        {
+          "expr": "sum(rate(edulms_grpc_server_handled_total{grpc_code!=\"OK\"}[5m])) / sum(rate(edulms_grpc_server_handled_total[5m]))",
+          "legendFormat": "Error rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Overall Error Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 8 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "gnatsd_varz_connections",
+          "legendFormat": "NATS connections",
+          "refId": "A"
+        }
+      ],
+      "title": "NATS Active Connections",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "llen_dlq_notification",
+          "legendFormat": "DLQ length",
+          "refId": "A"
+        }
+      ],
+      "title": "Notification DLQ Length",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "type": "traces",
+      "title": "Traces — search by service (auth / course / assessment)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+      "id": 6,
+      "options": {
+        "query": "{ resource.service.name =~ \"auth-svc-v2|course-svc-v2|assessment-svc-v2\" }",
+        "limit": 20
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceqlSearch",
+          "refId": "A",
+          "tableType": "traces",
+          "filters": [
+            {
+              "id": "service-name",
+              "operator": "=~",
+              "scope": "resource",
+              "tag": "service.name",
+              "value": ["auth-svc-v2", "course-svc-v2", "assessment-svc-v2"],
+              "valueType": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "type": "logs",
+      "title": "Logs — all edulmsv2 containers (last 15 min)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 22 },
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": false,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{container=~\"edulmsv2-.+\"} |= \"\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["edulms", "grpc", "nats", "traces", "logs"],
+  "title": "EDULMS v2 — Service Overview",
+  "uid": "edulms-overview",
+  "version": 2
+}

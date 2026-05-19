@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: course
+  namespace: edulms
+  labels: { app: course, tier: backend }
+spec:
+  selector: { app: course }
+  ports:
+    - name: grpc
+      port: 50052
+      targetPort: 50052
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: course
+  namespace: edulms
+  labels: { app: course, tier: backend }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: course }
+  template:
+    metadata:
+      labels: { app: course, tier: backend }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      containers:
+        - name: course
+          image: edulms/course:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50052
+              name: grpc
+          env:
+            - name: COURSE_GRPC_PORT
+              value: "50052"
+            - name: DATABASE_URL_COURSE
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/course_v2?sslmode=disable"
+          envFrom:
+            - configMapRef: { name: edulms-config }
+            - secretRef:    { name: edulms-secrets }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "750m", memory: "384Mi" }
+          readinessProbe:
+            tcpSocket: { port: 50052 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: 50052 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: course
+  namespace: edulms
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: course }
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

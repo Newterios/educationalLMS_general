@@ -1,0 +1,49 @@
+---
+# Top-level playbook for the EduLMS SRE End Term Project.
+#
+# Usage:
+#   ansible-playbook site.yml
+#   ansible-playbook site.yml --tags docker,deploy
+#   ansible-playbook site.yml --limit managers
+#
+# Stages:
+#   1. common  — system packages, users, time, firewall basics
+#   2. docker  — Docker engine + Compose plugin
+#   3. swarm   — initialise swarm on manager, join workers
+#   4. deploy  — copy compose / stack files and bring services up
+#   5. monitor — Prometheus + Grafana
+
+- name: Bootstrap base configuration
+  hosts: edulms
+  become: true
+  tags: [common]
+  roles:
+    - role: common
+
+- name: Install Docker on every node
+  hosts: edulms
+  become: true
+  tags: [docker]
+  roles:
+    - role: docker
+
+- name: Initialise Docker Swarm
+  hosts: edulms
+  become: true
+  tags: [swarm]
+  roles:
+    - role: swarm
+
+- name: Deploy EduLMS stack
+  hosts: managers
+  become: true
+  tags: [deploy]
+  roles:
+    - role: deploy
+
+- name: Install monitoring stack
+  hosts: managers
+  become: true
+  tags: [monitor]
+  roles:
+    - role: monitoring

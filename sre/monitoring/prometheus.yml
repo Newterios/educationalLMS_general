@@ -1,0 +1,44 @@
+# Standalone Prometheus config used by Terraform local + Ansible deploy.
+# Points at the existing services and the new payment/user-profile services.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: edulms-sre
+    env: lab
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []   # set when Alertmanager is deployed
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: payment
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["payment:8081"]
+        labels: { service: payment, tier: backend }
+
+  - job_name: user-profile
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["user-profile:8082"]
+        labels: { service: user-profile, tier: backend }
+
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:9080"]
+        labels: { service: gateway, tier: edge }
+
+  - job_name: auth-otel
+    static_configs:
+      - targets: ["otel-collector:8889"]
+        labels: { source: otel }

@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package course.v1;
+
+option go_package = "github.com/Newterios/lms-system-prob/proto/course/v1;coursev1";
+
+import "common/v1/common.proto";
+
+// CourseService — 12 RPCs from PLAN.md §3.2.
+//
+// Conventions:
+//   * timestamps are RFC3339 strings.
+//   * teacher_id on writes is taken from the JWT (caller's id) — never from the
+//     request body — so CreateCourse / UpdateCourse don't accept it as input.
+//   * ListEnrollments takes optional course_id and student_id filters and
+//     doubles as the enrollment check used by assessment-svc-v2 (empty result
+//     for (course_id, student_id) ⇒ "not enrolled"). See ARCHITECTURE.md §3.4.
+service CourseService {
+  rpc CreateCourse(CreateCourseRequest) returns (CreateCourseResponse);
+  rpc GetCourse(GetCourseRequest) returns (GetCourseResponse);
+  rpc UpdateCourse(UpdateCourseRequest) returns (UpdateCourseResponse);
+  rpc DeleteCourse(DeleteCourseRequest) returns (DeleteCourseResponse);
+  rpc ListCourses(ListCoursesRequest) returns (ListCoursesResponse);
+  rpc CreateSection(CreateSectionRequest) returns (CreateSectionResponse);
+  rpc ListSections(ListSectionsRequest) returns (ListSectionsResponse);
+  rpc AddMaterial(AddMaterialRequest) returns (AddMaterialResponse);
+  rpc ListMaterials(ListMaterialsRequest) returns (ListMaterialsResponse);
+  rpc EnrollStudent(EnrollStudentRequest) returns (EnrollStudentResponse);
+  rpc UnenrollStudent(UnenrollStudentRequest) returns (UnenrollStudentResponse);
+  rpc ListEnrollments(ListEnrollmentsRequest) returns (ListEnrollmentsResponse);
+}
+
+message Course {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string teacher_id = 4;
+  string language = 5;
+  string created_at = 6;      // RFC3339
+  string updated_at = 7;      // RFC3339
+}
+
+message Section {
+  string id = 1;
+  string course_id = 2;
+  string title = 3;
+  int32 position = 4;
+}
+
+message Material {
+  string id = 1;
+  string section_id = 2;
+  string kind = 3;            // "pdf" | "video" | "link"
+  string url = 4;
+  string title = 5;
+}
+
+message Enrollment {
+  string id = 1;
+  string course_id = 2;
+  string student_id = 3;
+  string enrolled_at = 4;     // RFC3339
+}
+
+// 1. CreateCourse — teacher_id comes from JWT.
+message CreateCourseRequest {
+  string title = 1;
+  string description = 2;
+  string language = 3;
+}
+message CreateCourseResponse {
+  Course course = 1;
+}
+
+// 2. GetCourse
+message GetCourseRequest {
+  string id = 1;
+}
+message GetCourseResponse {
+  Course course = 1;
+}
+
+// 3. UpdateCourse — only the editable metadata fields.
+message UpdateCourseRequest {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string language = 4;
+}
+message UpdateCourseResponse {
+  Course course = 1;
+}
+
+// 4. DeleteCourse — soft-delete (sets deleted_at).
+message DeleteCourseRequest {
+  string id = 1;
+}
+message DeleteCourseResponse {}
+
+// 5. ListCourses — optional teacher_id filter for "my courses" views.
+message ListCoursesRequest {
+  common.v1.Pagination pagination = 1;
+  optional string teacher_id = 2;
+}
+message ListCoursesResponse {
+  repeated Course courses = 1;
+  common.v1.PageInfo page_info = 2;
+}
+
+// 6. CreateSection
+message CreateSectionRequest {
+  string course_id = 1;
+  string title = 2;
+  int32 position = 3;
+}
+message CreateSectionResponse {
+  Section section = 1;
+}
+
+// 7. ListSections — small bounded list per course, no pagination.
+message ListSectionsRequest {
+  string course_id = 1;
+}
+message ListSectionsResponse {
+  repeated Section sections = 1;
+}
+
+// 8. AddMaterial
+message AddMaterialRequest {
+  string section_id = 1;
+  string kind = 2;
+  string url = 3;
+  string title = 4;
+}
+message AddMaterialResponse {
+  Material material = 1;
+}
+
+// 9. ListMaterials
+message ListMaterialsRequest {
+  string section_id = 1;
+}
+message ListMaterialsResponse {
+  repeated Material materials = 1;
+}
+
+// 10. EnrollStudent — student_id stays explicit to support both self-enroll
+//     and teacher-driven enroll (the usecase enforces the role check).
+message EnrollStudentRequest {
+  string course_id = 1;
+  string student_id = 2;
+}
+message EnrollStudentResponse {
+  Enrollment enrollment = 1;
+}
+
+// 11. UnenrollStudent
+message UnenrollStudentRequest {
+  string course_id = 1;
+  string student_id = 2;
+}
+message UnenrollStudentResponse {}
+
+// 12. ListEnrollments — optional filters by course_id and/or student_id.
+//     Used both by the gradebook UI and as a "check enrollment" by
+//     assessment-svc-v2 (empty enrollments slice ⇒ not enrolled).
+message ListEnrollmentsRequest {
+  optional string course_id = 1;
+  optional string student_id = 2;
+  common.v1.Pagination pagination = 3;
+}
+message ListEnrollmentsResponse {
+  repeated Enrollment enrollments = 1;
+  common.v1.PageInfo page_info = 2;
+}

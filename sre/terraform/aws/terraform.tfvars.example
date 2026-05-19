@@ -1,0 +1,6 @@
+aws_region        = "us-east-1"
+owner             = "your-name"
+node_count        = 2
+instance_type     = "t3.medium"
+ssh_key_name      = "edulms-sre-key"
+allowed_ssh_cidr  = "0.0.0.0/0"   # tighten this for real deployments

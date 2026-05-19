@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification
+  namespace: edulms
+  labels: { app: notification, tier: backend }
+spec:
+  selector: { app: notification }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification
+  namespace: edulms
+  labels: { app: notification, tier: backend }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: notification }
+  template:
+    metadata:
+      labels: { app: notification, tier: backend }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      containers:
+        - name: notification
+          image: edulms/notification:1.0.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NATS_URL
+              value: "nats://nats:4222"
+            - name: GATEWAY_URL
+              value: "http://mock-gateway:8090"
+            - name: WORKER_POOL_SIZE
+              value: "3"
+            - name: JOB_RETRY_ATTEMPTS
+              value: "3"
+            - name: DLQ_KEY
+              value: "dlq:notification"
+          envFrom:
+            - configMapRef: { name: edulms-config }
+            - secretRef:    { name: edulms-secrets }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }

@@ -1,0 +1,72 @@
+# SRE additional services compose file.
+#
+# Brings up the two extra microservices required to reach the 6+
+# microservice count described in the End Term Project spec, plus an
+# Nginx frontend acting as the API gateway in front of them.
+#
+# Usage:
+#   docker compose -f sre/docker-compose.sre.yml up -d --build
+#
+# Combine with the root docker-compose.dev.yml when needed:
+#   docker compose -f docker-compose.dev.yml -f sre/docker-compose.sre.yml \
+#       --profile services --profile obs up -d --build
+
+name: edulms-sre
+
+services:
+  payment:
+    build:
+      context: ./services/payment
+    image: edulms/payment:1.0.0
+    container_name: edulms-sre-payment
+    environment:
+      PORT: "8081"
+      FAILURE_RATE: "${PAYMENT_FAILURE_RATE:-0.02}"
+      LATENCY_BASELINE_MS: "${PAYMENT_LATENCY_MS:-40}"
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    networks:
+      - sre-net
+
+  user-profile:
+    build:
+      context: ./services/user-profile
+    image: edulms/user-profile:1.0.0
+    container_name: edulms-sre-user-profile
+    environment:
+      PORT: "8082"
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    networks:
+      - sre-net
+
+  nginx-frontend:
+    image: nginx:1.27-alpine
+    container_name: edulms-sre-nginx
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - payment
+      - user-profile
+    restart: unless-stopped
+    networks:
+      - sre-net
+
+networks:
+  sre-net:
+    name: edulms-sre-net
+    driver: bridge

@@ -1,0 +1,308 @@
+# EDULMS v2 — local dev infra.
+# Use with:  docker compose -p edulmsv2 -f docker-compose.dev.yml up -d
+# Ports are intentionally offset from v1 (5432/6379/9092) — see PLAN.md §5.
+# Observability stack: run with --profile obs  (otel-collector :4317, prometheus :9090, grafana :3000)
+
+name: edulmsv2
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: edulmsv2-postgres
+    environment:
+      POSTGRES_USER: edulms
+      POSTGRES_PASSWORD: edulms
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - edulmsv2-postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edulms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - edulms-v2-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: edulmsv2-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - edulmsv2-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - edulms-v2-net
+
+  nats:
+    image: nats:2-alpine
+    container_name: edulmsv2-nats
+    command: ["-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - edulms-v2-net
+
+  mock-gateway:
+    build:
+      context: .
+      dockerfile: mock-gateway/Dockerfile
+    container_name: edulmsv2-mock-gateway
+    environment:
+      MOCK_GATEWAY_PORT: "8090"
+      MOCK_GATEWAY_FAILURE_RATE: "${MOCK_GATEWAY_FAILURE_RATE:-20}"
+    ports:
+      - "8090:8090"
+    networks:
+      - edulms-v2-net
+
+  notification:
+    build:
+      context: .
+      dockerfile: notification/Dockerfile
+    container_name: edulmsv2-notification
+    environment:
+      NATS_URL: "nats://nats:4222"
+      GATEWAY_URL: "http://mock-gateway:8090"
+      WORKER_POOL_SIZE: "${WORKER_POOL_SIZE:-3}"
+      JOB_RETRY_ATTEMPTS: "${JOB_RETRY_ATTEMPTS:-3}"
+      DLQ_KEY: "dlq:notification"
+    depends_on:
+      nats:
+        condition: service_healthy
+      mock-gateway:
+        condition: service_started
+    networks:
+      - edulms-v2-net
+
+
+  gateway:
+    profiles: [services]
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    container_name: edulmsv2-gateway
+    environment:
+      GATEWAY_HTTP_PORT: "9080"
+      GATEWAY_AUTH_TARGET: "auth:50051"
+      GATEWAY_COURSE_TARGET: "course:50052"
+      GATEWAY_ASSESSMENT_TARGET: "assessment:50053"
+    ports:
+      - "9080:9080"
+    depends_on:
+      - auth
+      - course
+      - assessment
+    networks:
+      - edulms-v2-net
+
+  auth:
+    profiles: [services]
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: edulmsv2-auth
+    environment:
+      DB_URL: "postgres://edulms:edulms@postgres:5432/auth_v2?sslmode=disable"
+      JWT_ACCESS_SECRET: "${JWT_ACCESS_SECRET}"
+      JWT_REFRESH_SECRET: "${JWT_REFRESH_SECRET}"
+      GRPC_PORT: "50051"
+      MIGRATIONS_DIR: /migrations
+      NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/0"
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - edulms-v2-net
+
+  course:
+    profiles: [services]
+    build:
+      context: .
+      dockerfile: services/course/Dockerfile
+    container_name: edulmsv2-course
+    environment:
+      DATABASE_URL_COURSE: "postgres://edulms:edulms@postgres:5432/course_v2?sslmode=disable"
+      JWT_ACCESS_SECRET: "${JWT_ACCESS_SECRET}"
+      COURSE_GRPC_PORT: "50052"
+      COURSE_MIGRATIONS_DIR: /migrations
+      NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/1"
+    ports:
+      - "50052:50052"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - edulms-v2-net
+
+  assessment:
+    profiles: [services]
+    build:
+      context: .
+      dockerfile: services/assessment/Dockerfile
+    container_name: edulmsv2-assessment
+    environment:
+      DATABASE_URL_ASSESSMENT: "postgres://edulms:edulms@postgres:5432/assessment_v2?sslmode=disable"
+      JWT_ACCESS_SECRET: "${JWT_ACCESS_SECRET}"
+      ASSESSMENT_GRPC_PORT: "50053"
+      ASSESSMENT_MIGRATIONS_DIR: /migrations
+      NATS_URL: "nats://nats:4222"
+      REDIS_URL: "redis://redis:6379/2"
+      COURSE_GRPC_TARGET: "course:50052"
+    ports:
+      - "50053:50053"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      course:
+        condition: service_started
+    networks:
+      - edulms-v2-net
+
+  # ── Frontend (profile: web) ───────────────────────────────────────────────
+  web:
+    profiles: [web]
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:9080
+    container_name: edulmsv2-web
+    ports:
+      - "4000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:9080
+    depends_on:
+      - gateway
+    networks:
+      - edulms-v2-net
+
+  # ── Observability (profile: obs) ───────────────────────────────────────────
+  otel-collector:
+    profiles: [obs]
+    image: otel/opentelemetry-collector-contrib:0.102.0
+    container_name: edulmsv2-otel-collector
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus scrape
+    networks:
+      - edulms-v2-net
+
+  tempo:
+    profiles: [obs]
+    image: grafana/tempo:2.4.1
+    container_name: edulmsv2-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - edulmsv2-tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
+    networks:
+      - edulms-v2-net
+
+  loki:
+    profiles: [obs]
+    image: grafana/loki:2.9.4
+    container_name: edulmsv2-loki
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/config.yaml:ro
+      - edulmsv2-loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - edulms-v2-net
+
+  promtail:
+    profiles: [obs]
+    image: grafana/promtail:2.9.4
+    container_name: edulmsv2-promtail
+    command: ["-config.file=/etc/promtail/config.yaml"]
+    volumes:
+      - ./observability/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - edulms-v2-net
+
+  prometheus:
+    profiles: [obs]
+    image: prom/prometheus:v2.52.0
+    container_name: edulmsv2-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - edulmsv2-prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+    networks:
+      - edulms-v2-net
+
+  grafana:
+    profiles: [obs]
+    image: grafana/grafana:10.4.3
+    container_name: edulmsv2-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - edulmsv2-grafana-data:/var/lib/grafana
+    ports:
+      - "3002:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - edulms-v2-net
+
+networks:
+  edulms-v2-net:
+    name: edulms-v2-net
+    driver: bridge
+
+volumes:
+  edulmsv2-postgres-data:
+  edulmsv2-redis-data:
+  edulmsv2-prometheus-data:
+  edulmsv2-grafana-data:
+  edulmsv2-tempo-data:
+  edulmsv2-loki-data:

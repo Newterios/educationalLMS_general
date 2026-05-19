@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth
+  namespace: edulms
+  labels: { app: auth, tier: backend }
+spec:
+  selector: { app: auth }
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  namespace: edulms
+  labels: { app: auth, tier: backend }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: auth }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels: { app: auth, tier: backend }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      containers:
+        - name: auth
+          image: edulms/auth:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50051
+              name: grpc
+          env:
+            - name: GRPC_PORT
+              value: "50051"
+            - name: DB_URL
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/auth_v2?sslmode=disable"
+          envFrom:
+            - configMapRef: { name: edulms-config }
+            - secretRef:    { name: edulms-secrets }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          readinessProbe:
+            tcpSocket: { port: 50051 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: 50051 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth
+  namespace: edulms
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
