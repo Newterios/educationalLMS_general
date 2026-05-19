@@ -4,19 +4,27 @@
 # microservice count described in the End Term Project spec, plus an
 # Nginx frontend acting as the API gateway in front of them.
 #
-# Usage:
-#   docker compose -f sre/docker-compose.sre.yml up -d --build
+# IMPORTANT: all paths in this file are relative to the **repository
+# root** (the directory that contains docker-compose.dev.yml), because
+# Compose resolves relative paths against the first `-f` file's
+# project directory. Run from the repo root:
 #
-# Combine with the root docker-compose.dev.yml when needed:
-#   docker compose -f docker-compose.dev.yml -f sre/docker-compose.sre.yml \
+#   docker compose -p edulmsv2 -f docker-compose.dev.yml \
+#       -f sre/docker-compose.sre.yml \
 #       --profile services --profile obs up -d --build
-
-name: edulms-sre
+#
+# Or via the helper Makefile:
+#   make -C sre up
+#
+# NOTE: no top-level `name:` here on purpose — we want both compose
+# files to run under the SAME project name (`edulmsv2`) so the
+# containers that have `container_name: edulmsv2-...` hardcoded in
+# docker-compose.dev.yml do not collide with parallel projects.
 
 services:
   payment:
     build:
-      context: ./services/payment
+      context: ./sre/services/payment
     image: edulms/payment:1.0.0
     container_name: edulms-sre-payment
     environment:
@@ -32,11 +40,11 @@ services:
       timeout: 3s
       retries: 3
     networks:
-      - sre-net
+      - edulms-v2-net    # same network as prometheus + the Go services
 
   user-profile:
     build:
-      context: ./services/user-profile
+      context: ./sre/services/user-profile
     image: edulms/user-profile:1.0.0
     container_name: edulms-sre-user-profile
     environment:
@@ -50,13 +58,13 @@ services:
       timeout: 3s
       retries: 3
     networks:
-      - sre-net
+      - edulms-v2-net    # same network as prometheus + the Go services
 
   nginx-frontend:
     image: nginx:1.27-alpine
     container_name: edulms-sre-nginx
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./sre/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8080:80"
     depends_on:
@@ -64,9 +72,18 @@ services:
       - user-profile
     restart: unless-stopped
     networks:
-      - sre-net
+      - edulms-v2-net    # same network as prometheus + the Go services
+
+  # ── overlay: bolt the SLO alert rules onto the existing Prometheus
+  #    container declared by docker-compose.dev.yml so the rules file
+  #    pointed at by observability/prometheus.yml actually exists.
+  prometheus:
+    volumes:
+      - ./observability/rules:/etc/prometheus/rules:ro
+    networks:
+      - edulms-v2-net    # same network as prometheus + the Go services
 
 networks:
-  sre-net:
-    name: edulms-sre-net
-    driver: bridge
+  edulms-v2-net:
+    name: edulms-v2-net
+    external: true   # reuse the network created by docker-compose.dev.yml

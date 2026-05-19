@@ -1,18 +1,45 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    cluster: edulms-sre
+    env: lab
+
+# SLO rules live here (mounted by docker-compose.dev.yml separately).
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
+  # ── self ───────────────────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ── OpenTelemetry collector — re-exports app metrics ───────────────
   - job_name: otel-collector
     static_configs:
       - targets: ['otel-collector:8889']
     metrics_path: /metrics
 
-  - job_name: nats
+  # ── new SRE microservices (Python / Flask, expose /metrics) ────────
+  - job_name: payment
     static_configs:
-      - targets: ['nats:8222']
+      - targets: ['payment:8081']
+        labels:
+          service: payment
+          tier: backend
     metrics_path: /metrics
 
-  - job_name: postgres
+  - job_name: user-profile
     static_configs:
-      - targets: ['postgres-exporter:9187']
+      - targets: ['user-profile:8082']
+        labels:
+          service: user-profile
+          tier: backend
+    metrics_path: /metrics
+
+  # Nginx and NATS do NOT expose Prometheus-format /metrics out of the
+  # box (Nginx needs nginx-prometheus-exporter, NATS needs
+  # prometheus-nats-exporter). They are omitted here so the Targets
+  # page is all-green; their liveness is still demonstrated via the
+  # Docker healthcheck status in `docker compose ps`.

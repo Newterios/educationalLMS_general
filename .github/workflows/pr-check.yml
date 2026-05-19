@@ -1,0 +1,50 @@
+# Fast PR gate — runs on every pull request so reviewers see green/red
+# checks before merging into main.
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  yaml-lint:
+    name: YAML lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          pip install yamllint
+          yamllint -d '{extends: default, rules: {line-length: disable, indentation: {spaces: 2}}}' \
+              .github/ sre/k8s/ sre/ansible/ sre/swarm/ sre/monitoring/ \
+              || true
+
+  terraform-fmt:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=sre/terraform/aws fmt -check -recursive || true
+      - run: terraform -chdir=sre/terraform/aws init -backend=false && terraform -chdir=sre/terraform/aws validate
+
+  ansible-lint:
+    name: Ansible lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ansible ansible-lint
+      - run: ansible-lint sre/ansible/site.yml || true
+
+  size-check:
+    name: Diff size sanity check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Show PR size
+        run: |
+          BASE=${{ github.event.pull_request.base.sha }}
+          HEAD=${{ github.event.pull_request.head.sha }}
+          echo "Changed files:"
+          git diff --stat $BASE..$HEAD

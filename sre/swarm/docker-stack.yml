@@ -201,7 +201,10 @@ services:
 
 configs:
   prom_cfg:
-    file: ../monitoring/prometheus.yml
+    # Path is relative to the repository root because `docker stack deploy`
+    # is intended to be run via `make -C sre swarm-up`, which `cd`s to the
+    # repo root first.
+    file: ./sre/monitoring/prometheus.yml
 
 volumes:
   pgdata:
