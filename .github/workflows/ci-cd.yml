@@ -3,7 +3,7 @@
 # Flow (matches the whiteboard plan):
 #   branch  →  CI (lint + test + build images)  →  CD (ssh deploy)
 #
-#   1. SSH to newterio.work.gd server
+#   1. SSH to sre.aitbek.tech server
 #   2. cd project && git pull
 #   3. run scripts: ansible / sh / Makefile
 #   4. docker: build images
@@ -21,7 +21,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  DEPLOY_HOST: newterio.work.gd
+  DEPLOY_HOST: sre.aitbek.tech
   DEPLOY_USER: ubuntu
   DEPLOY_PATH: /opt/edulms
 
@@ -117,13 +117,13 @@ jobs:
 
   # ─── CD: Deploy to server ────────────────────────────────────────────
   deploy:
-    name: Deploy to newterio.work.gd
+    name: Deploy to sre.aitbek.tech
     runs-on: ubuntu-latest
     needs: build-images
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: https://newterio.work.gd
+      url: https://sre.aitbek.tech
     steps:
       - name: Install SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -193,9 +193,9 @@ jobs:
           echo "Waiting 20s for services to settle..."
           sleep 20
           for endpoint in \
-              "https://newterio.work.gd/health" \
-              "https://newterio.work.gd/api/payments/health" \
-              "https://newterio.work.gd/api/profiles/health"; do
+              "https://sre.aitbek.tech/health" \
+              "https://sre.aitbek.tech/api/payments/health" \
+              "https://sre.aitbek.tech/api/profiles/health"; do
             echo "==> GET $endpoint"
             for i in 1 2 3 4 5; do
               if curl -fsS --max-time 8 "$endpoint"; then
