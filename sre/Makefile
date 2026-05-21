@@ -6,7 +6,7 @@
 SHELL  := /bin/bash
 ROOT   := $(realpath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 PROJECT := edulmsv2
-COMPOSE := docker compose -p $(PROJECT) -f docker-compose.dev.yml -f sre/docker-compose.sre.yml
+COMPOSE := docker compose -p $(PROJECT) -f docker-compose.dev.yml -f sre/docker-compose.sre.yml --profile web
 
 .PHONY: help build up down logs ps k8s-apply k8s-delete swarm-up swarm-down \
         tf-aws-init tf-aws-plan tf-aws-apply tf-local-up tf-local-down \

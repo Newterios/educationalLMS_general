@@ -86,6 +86,7 @@ jobs:
           - { name: gateway,      context: ., dockerfile: gateway/Dockerfile }
           - { name: payment,      context: sre/services/payment }
           - { name: user-profile, context: sre/services/user-profile }
+          - { name: web,          context: web, build-args: "NEXT_PUBLIC_API_URL=https://sre.aitbek.tech" }
     steps:
       - uses: actions/checkout@v4
 
@@ -109,6 +110,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
+          build-args: ${{ matrix.build-args }}
           tags: |
             ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}/${{ matrix.name }}:latest
             ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}/${{ matrix.name }}:${{ github.sha }}

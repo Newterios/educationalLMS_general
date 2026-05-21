@@ -60,6 +60,21 @@ services:
     networks:
       - edulms-v2-net    # same network as prometheus + the Go services
 
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: https://sre.aitbek.tech
+    environment:
+      NEXT_PUBLIC_API_URL: https://sre.aitbek.tech
+      NODE_ENV: production
+    container_name: edulmsv2-web
+    ports:
+      - "4000:3000"
+    restart: unless-stopped
+    networks:
+      - edulms-v2-net
+
   nginx-frontend:
     image: nginx:1.27-alpine
     container_name: edulms-sre-nginx
@@ -70,6 +85,7 @@ services:
     depends_on:
       - payment
       - user-profile
+      - web
     restart: unless-stopped
     networks:
       - edulms-v2-net    # same network as prometheus + the Go services
