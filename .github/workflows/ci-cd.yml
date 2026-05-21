@@ -21,7 +21,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
   DEPLOY_HOST: aitbek.tech
   DEPLOY_USER: ubuntu
   DEPLOY_PATH: /opt/edulms
