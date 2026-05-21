@@ -15,18 +15,22 @@
 
 set -euo pipefail
 
-HOST="${EDULMS_HOST:-aitbek.tech}"
+HOST="${EDULMS_HOST:-13.63.140.216}"
 USER="${EDULMS_USER:-ubuntu}"
 PATH_REMOTE="${EDULMS_PATH:-/opt/edulms}"
 BRANCH="${EDULMS_BRANCH:-main}"
+SSH_KEY="${SSH_KEY:-$HOME/Downloads/conection.pem}"
+
+SSH_OPTS="-o StrictHostKeyChecking=no"
+[ -f "$SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 step "1/5  SSH to $USER@$HOST"
-ssh -o StrictHostKeyChecking=no "$USER@$HOST" "echo connected as \$(whoami) on \$(hostname)"
+ssh $SSH_OPTS "$USER@$HOST" "echo connected as \$(whoami) on \$(hostname)"
 
 step "2/5  Pull latest code (branch=$BRANCH)"
-ssh "$USER@$HOST" bash -se <<EOF
+ssh $SSH_OPTS "$USER@$HOST" bash -se <<EOF
   set -euo pipefail
   cd $PATH_REMOTE
   git fetch --all
@@ -36,14 +40,14 @@ ssh "$USER@$HOST" bash -se <<EOF
 EOF
 
 step "3/5  Run Ansible deploy + monitoring playbooks"
-ssh "$USER@$HOST" bash -se <<EOF
+ssh $SSH_OPTS "$USER@$HOST" bash -se <<EOF
   set -euo pipefail
   cd $PATH_REMOTE/sre/ansible
   ansible-playbook -i inventory.ini site.yml --tags deploy,monitor
 EOF
 
 step "4/5  Docker compose up / kubectl apply"
-ssh "$USER@$HOST" bash -se <<EOF
+ssh $SSH_OPTS "$USER@$HOST" bash -se <<EOF
   set -euo pipefail
   cd $PATH_REMOTE
   if command -v kubectl >/dev/null 2>&1; then

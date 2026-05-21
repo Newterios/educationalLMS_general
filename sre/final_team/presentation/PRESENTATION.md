@@ -15,18 +15,19 @@ style: |
   table { font-size: 22px; }
   code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
   pre { font-size: 18px; }
-  .team-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-top: 30px;
-  }
   .speaker {
     background: #dbeafe;
     color: #1e3a8a;
     padding: 4px 12px;
     border-radius: 4px;
     font-size: 18px;
+    font-weight: bold;
+  }
+  .live-badge {
+    background: #16a34a;
+    color: white;
+    padding: 6px 14px;
+    border-radius: 6px;
     font-weight: bold;
   }
 ---
@@ -39,7 +40,8 @@ style: |
 
 **Team:** Aitbek · Syrym · Fariza · Mansur
 
-**Live:** [aitbek.tech](https://aitbek.tech) · **Repo:** [github.com/Newterios/educationalLMS](https://github.com/Newterios/educationalLMS)
+<span class="live-badge">LIVE @ aitbek.tech</span>
+**Repo:** github.com/Newterios/educationalLMS
 
 Astana IT University · SRE · 2026
 
@@ -47,109 +49,94 @@ Astana IT University · SRE · 2026
 
 ## Team & Speaking Order
 
-| Member                | Role                           | Slides       |
-|-----------------------|--------------------------------|--------------|
-| **Aitbek Nugmanov**   | Team Lead / Backend & SRE      | 1, 4, 8–10   |
-| **Syrym Shadiyarbek** | DevOps / CI-CD                 | 6, 7         |
-| **Fariza Arstanbek**  | Frontend / Monitoring          | 11, 12       |
-| **Mansur Ryskali**    | Backend / Infrastructure       | 3, 5         |
+| Member                | Role                         | Slides       |
+|-----------------------|------------------------------|--------------|
+| **Aitbek Nugmanov**   | Team Lead / Backend & SRE    | 1, 4, 9–11   |
+| **Syrym Shadiyarbek** | DevOps / CI-CD               | 7, 8         |
+| **Fariza Arstanbek**  | Frontend / Monitoring        | 12, 13       |
+| **Mansur Ryskali**    | Backend / Infrastructure     | 3, 5, 6      |
 
 <span class="speaker">Speaker: Aitbek</span>
 
 ---
 
-## Problem & Goal
+## Goal
 
-- Run an LMS with **6+ microservices** reliably.
-- Define & meet SLOs (99 % availability, 200 ms p95, ≤ 1 % errors).
-- **Multi-orchestration**: Compose, Swarm, Kubernetes.
-- **IaC + ConfigMgmt**: Terraform + Ansible.
-- **CI/CD** that auto-deploys to `aitbek.tech` on every merge.
-- Detect, alert and recover from incidents — with postmortems.
+- 6+ microservices, **deployed and running** at <https://aitbek.tech>
+- Define & meet SLOs (99 % availability, 200 ms p95, ≤ 1 % errors)
+- **Multi-orchestration**: Docker Compose, Swarm, Kubernetes
+- **IaC + ConfigMgmt**: Terraform + Ansible
+- **CI/CD** — every push to `main` auto-deploys to the server
+- Detect, alert and recover from incidents with a postmortem
 
 <span class="speaker">Speaker: Aitbek</span>
 
 ---
 
-## Architecture
+## Repository Layout
 
-```
-Browser (Next.js) ──► Nginx Gateway :8080
-                         │
-   ┌──────┬───────┬──────┼──────┬─────────────┐
-   ▼      ▼       ▼      ▼      ▼             ▼
-  Auth  User   Course  Asmt  Attendance  Notification
-                                   │
-                  Payment   Profile   Analytics
-                         │
-              PostgreSQL · Redis · NATS · MinIO
-```
+![h:430 center](../screenshots/new/01-repo-tree.png)
 
-**Stack**: Go (5), Python/Flask (2), Next.js (web), PostgreSQL, Redis, NATS
+<span class="speaker">Speaker: Aitbek</span>
+
+---
+
+## SRE Folder
+
+![h:430 center](../screenshots/new/02-sre-folder-tree.png)
 
 <span class="speaker">Speaker: Mansur</span>
 
 ---
 
-## Kubernetes — Multi-pod, Multi-replica
+## Kubernetes — 13 manifests for 6 services + infra
 
-![h:380 center](../screenshots/kubectl-apply-output.png)
+![h:330 center](../screenshots/new/03-k8s-folder-listing.png)
 
-`kubectl apply -f sre/k8s/` deploys all 13 manifests:
-namespaces, ConfigMaps, Secrets, Deployments, Services, HPAs, Ingress.
+`kubectl apply -f sre/k8s/` — Deployments, Services, HPAs, Ingress.
 
 <span class="speaker">Speaker: Aitbek</span>
 
 ---
 
-## Terraform — DigitalOcean infrastructure
+## Terraform — DigitalOcean Infrastructure
 
-![h:380 center](../screenshots/terraform-main-tf-code.png)
+![h:430 center](../screenshots/new/04-terraform-folder.png)
 
-VPC + firewall + Ubuntu 22.04 droplet, fully declarative.
+VPC + firewall + Ubuntu droplet → the host that runs **aitbek.tech**.
 
 <span class="speaker">Speaker: Mansur</span>
 
 ---
 
-## CI/CD Pipeline — the new piece
+## Ansible — Configuration Management
 
-![h:380 center](../screenshots/cicd-workflow-yml.png)
+![h:430 center](../screenshots/new/05-ansible-folder.png)
+
+5 roles: common · docker · swarm · deploy · monitoring.
+
+<span class="speaker">Speaker: Mansur</span>
+
+---
+
+## CI/CD Pipeline (new for the team final)
+
+![h:430 center](../screenshots/new/06-cicd-yml-vscode.png)
 
 **Triggers**: push to `main` / PR
-**Jobs**: Lint → Test → Build images → Deploy → Health check
+**Flow**: lint → test → build images → SSH → ansible → kubectl → health-check
 
 <span class="speaker">Speaker: Syrym</span>
 
 ---
 
-## CI/CD — Deploy stage (5 steps on aitbek.tech)
+## CI/CD — Live runs on GitHub Actions
 
-1. **SSH** to server (`aitbek.tech`)
-2. **`git pull`** in `/opt/edulms`
-3. **`ansible-playbook`** — config + deploy
-4. **Docker / kubectl** — pull images + rolling restart
-5. **Health-check** every service (`curl /health`, 5 retries)
+![h:380 center](../screenshots/new/08-github-actions-detail.png)
 
-```yaml
-- name: Health check
-  run: |
-    for url in /health /api/payments /api/profiles ; do
-      curl -fsS "https://aitbek.tech$url" || exit 1
-    done
-```
+Matrix strategy: every microservice gets its own Lint & Test job.
 
 <span class="speaker">Speaker: Syrym</span>
-
----
-
-## Ansible — automated configuration
-
-![h:340 center](../screenshots/ansible-playbooks-output.png)
-
-3 playbooks: `prepare` (host) → `deploy` (compose) → `monitoring` (Prom+Grafana)
-
-<span class="speaker">Speaker: Aitbek</span>
 
 ---
 
@@ -163,53 +150,54 @@ VPC + firewall + Ubuntu 22.04 droplet, fully declarative.
 | User Profile  | ≥ 99 %       | ≤ 150 ms    | ≤ 1 %      |
 | Gateway       | ≥ 99.9 %     | ≤ 50 ms     | ≤ 0.1 %    |
 
-Error budget policy: feature freeze when monthly budget < 0 %.
+Error budget policy: feature freeze when monthly budget hits 0 %.
 
 <span class="speaker">Speaker: Aitbek</span>
 
 ---
 
-## Monitoring — Golden Signals dashboard
+## Monitoring — Prometheus targets all UP
 
-![h:430 center](../screenshots/grafana-dashboard-full.png)
+![h:300 center](../screenshots/new/12-prometheus-targets.png)
 
-<span class="speaker">Speaker: Fariza</span>
-
----
-
-## SLO Compliance Overview (Grafana)
-
-![h:430 center](../screenshots/grafana-slo-overview.png)
-
-100 % availability · 100 % error budget · 13 % CPU saturation · DB UP
+4/4 green: `prometheus`, `otel-collector`, `payment`, `user-profile`.
 
 <span class="speaker">Speaker: Fariza</span>
 
 ---
 
-## Incident — PostgresDown FIRING
+## Monitoring — Grafana SRE Dashboard
+
+![h:380 center](../screenshots/new/13-grafana-dashboard.png)
+
+Golden Signals (rate, errors, latency p95/p99, saturation) for `payment`.
+
+<span class="speaker">Speaker: Fariza</span>
+
+---
+
+## Incident — Alert FIRING
 
 ```bash
-docker stop diplom-postgres-exporter-1
-# 65 seconds later → alert state: FIRING
+make -C sre incident-on    # 100 % failure rate injected
 ```
 
-![h:380 center](../screenshots/prometheus-alerts-firing.png)
+Alert path: **inactive → pending → FIRING** in ~5 minutes.
 
-**Detection 60 s · Mitigation 1 command · Postmortem committed**
+![h:320 center](../screenshots/new/14-alert-firing.png)
 
 <span class="speaker">Speaker: Aitbek</span>
 
 ---
 
-## Capacity Planning & Scaling
+## Capacity Planning
 
 **Findings**
 - Assessment & payment = peak CPU
 - PostgreSQL = primary bottleneck
 
 **Strategy**
-- Horizontal: HPA on CPU 70 %, max 6 replicas per service
+- Horizontal: HPA on CPU 70 %, max 6 replicas/service
 - Vertical: `requests` / `limits` tuned
 - DB: index hot paths, PgBouncer planned
 
@@ -217,25 +205,28 @@ docker stop diplom-postgres-exporter-1
 
 ---
 
-## Demo Plan
+## Live Demo Plan
 
-1. Open <https://aitbek.tech> — LMS landing
-2. Open Grafana dashboard — golden signals live
-3. Push a commit to `main` → GitHub Actions auto-deploy
-4. Trigger incident → watch alert go FIRING
-5. Recover service → alert clears
+1. Open <https://aitbek.tech> — deployed LMS
+2. Show GitHub Actions tab — last green pipeline
+3. Open Grafana dashboard (local) — golden signals
+4. Run `make -C sre incident-on` → alert FIRING
+5. `make -C sre incident-off` → alert clears
 
-<span class="speaker">Demo led by Aitbek + Syrym</span>
+<span class="live-badge">Server is up & serving traffic right now</span>
+
+<span class="speaker">Demo: Aitbek + Syrym</span>
 
 ---
 
 ## Deliverables ✓
 
-- 6+ microservices  •  Docker Compose / Swarm  •  Kubernetes
-- Terraform IaC  •  Ansible roles  •  **CI/CD pipeline (new)**
+- 6+ microservices · Compose · Swarm · K8s
+- Terraform · Ansible · **CI/CD pipeline (new)**
 - Prometheus + Grafana + SLO alerts
-- Incident report + Google-style postmortem
-- **Deployed at [aitbek.tech](https://aitbek.tech)** + GitHub Actions runs
+- Incident report + blameless postmortem
+- **Deployed and running at <https://aitbek.tech>**
+- Repo: <https://github.com/Newterios/educationalLMS>
 
 ---
 
@@ -243,7 +234,7 @@ docker stop diplom-postgres-exporter-1
 
 # Questions?
 
-**Repo:** github.com/Newterios/educationalLMS
 **Live:** aitbek.tech
+**Repo:** github.com/Newterios/educationalLMS
 
 Aitbek · Syrym · Fariza · Mansur

@@ -7,32 +7,34 @@
     group: "{{ ansible_user }}"
     mode: "0755"
 
-- name: Copy Docker Swarm stack file
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../swarm/docker-stack.yml"
-    dest: /opt/edulms/docker-stack.yml
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0644"
-
-- name: Copy Prometheus config
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../monitoring/prometheus.yml"
-    dest: /opt/edulms/prometheus.yml
-    mode: "0644"
-
-- name: Deploy / update the EduLMS swarm stack
-  ansible.builtin.command: docker stack deploy -c /opt/edulms/docker-stack.yml edulms
-  args:
+- name: Pull latest code
+  ansible.builtin.command:
+    cmd: git pull --ff-only
     chdir: /opt/edulms
-  register: stack_deploy
-  changed_when: "'Updating' in stack_deploy.stdout or 'Creating' in stack_deploy.stdout"
+  register: git_pull
+  changed_when: "'Already up to date' not in git_pull.stdout"
 
-- name: Show running services
-  ansible.builtin.command: docker stack services edulms
-  register: stack_services
+- name: Start / update services with Docker Compose
+  ansible.builtin.command:
+    cmd: >
+      docker compose -p edulmsv2
+      -f docker-compose.dev.yml
+      -f sre/docker-compose.sre.yml
+      --profile services --profile obs
+      up -d --build --remove-orphans
+    chdir: /opt/edulms
+  register: compose_up
+  changed_when: "'Started' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+
+- name: Restart nginx container to reload config (inode refresh)
+  ansible.builtin.command: docker restart edulms-sre-nginx
+  changed_when: true
+
+- name: Show running containers
+  ansible.builtin.command: docker ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}"
+  register: docker_ps
   changed_when: false
 
-- name: Display service summary
+- name: Display container summary
   ansible.builtin.debug:
-    var: stack_services.stdout_lines
+    var: docker_ps.stdout_lines

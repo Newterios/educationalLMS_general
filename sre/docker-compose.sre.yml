@@ -13,6 +13,10 @@
 #       -f sre/docker-compose.sre.yml \
 #       --profile services --profile obs up -d --build
 #
+# NOTE: do NOT pass --profile web here — sre-web has no profile and starts
+# automatically; adding --profile web would also activate the base `web`
+# service (docker-compose.dev.yml) which shares the same container_name.
+#
 # Or via the helper Makefile:
 #   make -C sre up
 #
@@ -60,16 +64,33 @@ services:
     networks:
       - edulms-v2-net    # same network as prometheus + the Go services
 
+  sre-web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: https://sre.aitbek.tech
+    image: edulms/sre-web:1.0.0
+    container_name: edulms-sre-web
+    environment:
+      NEXT_PUBLIC_API_URL: https://sre.aitbek.tech
+      NODE_ENV: production
+    ports:
+      - "4000:3000"
+    restart: unless-stopped
+    networks:
+      - edulms-v2-net
+
   nginx-frontend:
     image: nginx:1.27-alpine
     container_name: edulms-sre-nginx
     volumes:
-      - ./sre/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./sre/nginx:/etc/nginx/conf.d:ro
     ports:
       - "8080:80"
     depends_on:
       - payment
       - user-profile
+      - sre-web
     restart: unless-stopped
     networks:
       - edulms-v2-net    # same network as prometheus + the Go services
@@ -78,10 +99,27 @@ services:
   #    container declared by docker-compose.dev.yml so the rules file
   #    pointed at by observability/prometheus.yml actually exists.
   prometheus:
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.external-url=https://sre.aitbek.tech/monitoring/prometheus'
+      - '--web.route-prefix=/monitoring/prometheus'
     volumes:
       - ./observability/rules:/etc/prometheus/rules:ro
     networks:
-      - edulms-v2-net    # same network as prometheus + the Go services
+      - edulms-v2-net
+
+  # ── Grafana: expose at /monitoring/grafana via nginx reverse proxy ──────
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: "EduLMS@SRE2026"
+      GF_SECURITY_ADMIN_EMAIL: "aitbek2604@gmail.com"
+      GF_SERVER_ROOT_URL: "https://sre.aitbek.tech/monitoring/grafana"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    networks:
+      - edulms-v2-net
 
 networks:
   edulms-v2-net:
