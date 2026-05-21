@@ -72,6 +72,7 @@ services:
     ports:
       - "4000:3000"
     restart: unless-stopped
+    depends_on: {}
     networks:
       - edulms-v2-net
 
